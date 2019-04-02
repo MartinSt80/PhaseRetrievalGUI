@@ -10,13 +10,16 @@ import os
 import time
 import xlsxwriter
 from io import BytesIO
+
 import tkinter as tk
 from tkinter import messagebox
+
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 
 from pyOTF import zernike
 from pyOTF import utils
+
 import bioformats_helper
 
 
@@ -158,6 +161,36 @@ class PsfandFitParameters:
         else:
             return True
 
+    def psf_parameter_dict(self):
+        """Creates a dictionary containing the PSF parameters, using keys as needed by
+           phaseretrieval_gui.PhaseRetrievalThreaded kwargs.
+
+                   Returns
+                   ----------
+                   dict
+                       Dictionary, mapping kwargs to their parameters
+        """
+        return dict(wl=self.em_wavelength.value.get(),
+                    na=self.num_aperture.value.get(),
+                    ni=self.refractive_index.value.get(),
+                    res=self.xy_res.value.get(),
+                    zres=self.z_res.value.get(),
+                    )
+
+    def fit_parameter_dict(self):
+        """Creates a dictionary containing the fit parameters, using keys as needed by
+                   phaseretrieval_gui.PhaseRetrievalThreaded kwargs.
+
+                           Returns
+                           ----------
+                           dict
+                               Dictionary, mapping kwargs to their parameters
+        """
+        return dict(max_iters=self.max_iterations.value.get(),
+                    pupil_tol=self.pupil_tolerance.value.get(),
+                    mse_tol=self.mse_tolerance.value.get(),
+                    )
+
 
 class ZernikeDecomposition:
     """Stores the results of the Zernike Polynom Decomposition.
@@ -185,7 +218,7 @@ class ZernikeDecomposition:
             self.value: double
                 Value of the phase coefficient (in units of wavelength)
             self.in_tolerance: bool
-                Whether value is greater or smaller the set phase tolerance (PsfandFitParameters.phase_tolerance)
+                Whether value is greater or smaller the set phase tolerance (PsfandFitParameters.phase_tolerance.value)
         """
         def __init__(self, order, name, value, in_tolerance):
             self.order = order
