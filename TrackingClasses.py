@@ -103,21 +103,21 @@ class PsfandFitParameters:
         self.phase_tolerance.value.set(0.5)
         self.is_initiated = False
 
-    def read_data_and_parameters(self, PSF_file_path):
+    def read_data_and_parameters(self, psf_file_path):
         """Read PSF file and write acquisition parameters and PSF data to attributes and sets self.is_initiated flag.
 
             Arguments
             ----------
-            PSF_file_path: string
+            psf_file_path: string
                 Full path of the PSF file
         """
         self.is_initiated = False
         try:
-            psf_info = bioformats_helper.PsfImageDataAndParameters(PSF_file_path)
+            psf_info = bioformats_helper.PsfImageDataAndParameters(psf_file_path)
         except AssertionError as pop_up_alert:
-            self.pop_up_error_window(pop_up_alert)
+            messagebox.showwarning(str(pop_up_alert), title='PSF file parameters or data not read correctly')
         except Exception as pop_up_alert:
-            self.pop_up_error_window(pop_up_alert, title='Invalid PSF file path')
+            messagebox.showwarning(str(pop_up_alert), title='Invalid PSF file path')
         else:
             self.num_aperture.value.set(psf_info.numerical_aperture)
             self.refractive_index.value.set(psf_info.refractive_index)
@@ -152,17 +152,11 @@ class PsfandFitParameters:
 
             assert self.psf_data.shape == (self.z_size, self.xy_size, self.xy_size), \
                 'PSF data array is not shaped correctly.'
-
         except AssertionError as pop_up_alert:
-            self.pop_up_error_window(pop_up_alert, title='Invalid PSF parameters')
+            messagebox.showwarning(str(pop_up_alert), title='Invalid PSF parameters')
             return False
         else:
             return True
-
-    def pop_up_error_window(self, error, title='Unsuitable PSF file loaded'):
-        """Creates toplevel window with error message.
-        """
-        messagebox.showwarning(title, str(error))
 
 
 class ZernikeDecomposition:
@@ -213,7 +207,7 @@ class ZernikeDecomposition:
             self.zernike_polynoms.append(self.ZernikePolynom(order, name, 0, None))
         self.zernike_polynoms.sort(key=lambda p: p.order)
 
-    def get_decomposition_from_PhaseRetrieval(self, pr_results, phase_tolerance):
+    def decomposition_from_phase_retrieval(self, pr_results, phase_tolerance):
         """ Run Zernike Decomposition on Phase Retrieval Results, update polynom list with phase coefficients
 
             Arguments
@@ -284,10 +278,8 @@ class ResultImageStreams:
         self.pr_fiterror_image_stream = BytesIO()
         self.zd_decomposition_image_stream = BytesIO()
 
-
     def reset_image_stream(self, stream, image):
         """Resets the image stream if the image changes
-
             Arguments
             ----------
                 stream: BytesIO
@@ -413,17 +405,17 @@ class PdfReport:
             c.drawRightString(xpos_value, ypos, str(parameter.value.get()))
             c.drawString(xpos_unit, ypos, parameter.unit)
 
-        #read image data from Bytestream
+        # read image data from Bytestream
         psf_xy_image = ImageReader(self.image_streams.psf_image_stream_xy)
         psf_xz_image = ImageReader(self.image_streams.psf_image_stream_xz)
         pr_res_image = ImageReader(self.image_streams.pr_result_image_stream)
         pr_mse_image = ImageReader(self.image_streams.pr_fiterror_image_stream)
         zd_res_image = ImageReader(self.image_streams.zd_decomposition_image_stream)
 
-        #initialize Canvas
+        # initialize Canvas
         c = canvas.Canvas(self.save_path)
 
-        #draw Headers and add PSF-filename
+        # draw Headers and add PSF-filename
         c.setFont('Helvetica-Bold', 16)
         c.drawString(100, 790, "Phase retrieval analysis")
         c.setFont('Helvetica-Bold', 12)
@@ -435,7 +427,7 @@ class PdfReport:
         c.setFont('Helvetica-Bold', 10)
         c.drawString(370, 730, "PSF & Fit parameters")
 
-        #list PSF and PR parameters
+        # list PSF and PR parameters
         c.setFont('Helvetica', 10)
         generate_psf_entry(710, self.psf_parameters.em_wavelength)
         generate_psf_entry(693, self.psf_parameters.num_aperture)
@@ -447,20 +439,20 @@ class PdfReport:
         generate_psf_entry(583, self.psf_parameters.mse_tolerance)
         generate_psf_entry(566, self.psf_parameters.phase_tolerance)
 
-        #show PSFs
+        # show PSFs
         c.setFont('Helvetica', 10)
         c.drawString(100, 710, "PSF x/y")
         c.drawString(230, 710, "PSF x/z")
         c.drawImage(psf_xy_image, 100, 585, width=120, height=120, mask=None)
         c.drawImage(psf_xz_image, 230, 585, width=120, height=120, mask=None)
 
-        #show PR Results (Results and Errors)
+        # show PR Results (Results and Errors)
         c.setFont('Helvetica-Bold', 12)
         c.drawString(100, 550, "Phase retrieval results")
         c.drawImage(pr_res_image, 100, 390, width=360, height=150, mask=None)
         c.drawImage(pr_mse_image, 100, 325, width=288, height=72, mask=None)
 
-        #setup description, why in which iteration the PR Algorithm terminated
+        # setup description, why in which iteration the PR Algorithm terminated
         c.setFont('Helvetica', 8)
         condition_strings = self.pr_state.current_state.get().split('\n')
         max_iters = self.psf_parameters.max_iterations.value.get()
@@ -473,11 +465,11 @@ class PdfReport:
             c.drawString(395, 340, condition_strings[1])
         if len(condition_strings) == 2 and self.pr_state.current_iter.get() < max_iters:
             condition_string = "During iteration {} / {} ".format(self.pr_state.current_iter.get(),
-                                                                 max_iters)
+                                                                  max_iters)
             c.drawString(395, 355, condition_string)
             c.drawString(395, 340, condition_strings[1])
 
-        #list results of the Zernike Polynom Decomposition
+        # list results of the Zernike Polynom Decomposition
         c.setFont('Helvetica-Bold', 12)
         c.drawString(100, 310, "Zernike decomposition results")
         c.drawImage(zd_res_image, 100, 60, width=240, height=240, mask=None)
@@ -499,18 +491,17 @@ class PdfReport:
             else:
                 c.setFillColorRGB(0.9, 0.07, 0.07)
             string_width = c.stringWidth("{:.2f}".format(polynom.value), font, 10)
-            """ string_width pos value: 19.46, neg value = 22.79, needed for right alignment"""
+
+            # string_width pos value: 19.46, neg value = 22.79, needed for right alignment
             c.drawString(520 + 22.79 - string_width, y_pos, "{:.2f}".format(polynom.value))
             y_pos -= 17
 
-        #print time at the end
+        # print time at the end
         generation_time = time.strftime("%d.%m.%Y - %H:%M:%S ", time.localtime())
         c.setFont('Helvetica', 10)
         c.setFillColorRGB(0, 0, 0)
         c.drawString(100, 10, "Report generated on: " + generation_time)
 
-        #create page and save
+        # create page and save
         c.showPage()
         c.save()
-
-
