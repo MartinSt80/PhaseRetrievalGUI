@@ -114,11 +114,11 @@ class PsfParamFrame(tk.LabelFrame):
             unit_label = tk.Label(self, text=parameter.unit, font=("Arial", self.main_app.font_size), anchor=tk.E)
             unit_label.grid(row=row_grid, column=2, sticky=tk.E, padx=2, pady=2)
 
-        generate_parameter_entry(self.main_app.psf_parameters.em_wavelength, 0)
-        generate_parameter_entry(self.main_app.psf_parameters.num_aperture, 1)
-        generate_parameter_entry(self.main_app.psf_parameters.refractive_index, 2)
-        generate_parameter_entry(self.main_app.psf_parameters.xy_res, 3)
-        generate_parameter_entry(self.main_app.psf_parameters.z_res, 4)
+        generate_parameter_entry(self.main_app.psf_fit_parameters.em_wavelength, 0)
+        generate_parameter_entry(self.main_app.psf_fit_parameters.num_aperture, 1)
+        generate_parameter_entry(self.main_app.psf_fit_parameters.refractive_index, 2)
+        generate_parameter_entry(self.main_app.psf_fit_parameters.xy_res, 3)
+        generate_parameter_entry(self.main_app.psf_fit_parameters.z_res, 4)
 
 
 class PrParamFrame(tk.LabelFrame):
@@ -140,10 +140,10 @@ class PrParamFrame(tk.LabelFrame):
             unit_label = tk.Label(self, text=parameter.unit, font=("Arial", self.main_app.font_size), anchor=tk.E)
             unit_label.grid(row=row_grid, column=2, sticky=tk.E, padx=2, pady=2)
 
-        generate_parameter_entry(self.main_app.psf_parameters.max_iterations, 0)
-        generate_parameter_entry(self.main_app.psf_parameters.pupil_tolerance, 1)
-        generate_parameter_entry(self.main_app.psf_parameters.mse_tolerance, 2)
-        generate_parameter_entry(self.main_app.psf_parameters.phase_tolerance, 3)
+        generate_parameter_entry(self.main_app.psf_fit_parameters.max_iterations, 0)
+        generate_parameter_entry(self.main_app.psf_fit_parameters.pupil_tolerance, 1)
+        generate_parameter_entry(self.main_app.psf_fit_parameters.mse_tolerance, 2)
+        generate_parameter_entry(self.main_app.psf_fit_parameters.phase_tolerance, 3)
 
 
 class PsfButtonFrame(tk.Frame):
@@ -156,87 +156,12 @@ class PsfButtonFrame(tk.Frame):
 
     def widgets(self):
         self.load_psf_button = tk.Button(self, text="Load PSF", font=("Arial", self.main_app.font_size),
-                                         command=self.load_PSF_file, width=18)
+                                         command=self.main_app.load_PSF_file, width=18)
         self.load_psf_button.grid(row=0, column=0, padx=5, pady=5, sticky=tk.E+tk.W)
 
         self.pr_button = tk.Button(self, text="Start Phase Retrieval", font=("Arial", self.main_app.font_size),
-                                         command=self.initiate_pr, width=18)
+                                         command=self.main_app.initiate_pr, width=18)
         self.pr_button.grid(row=0, column=1, padx=5, pady=5, sticky=tk.E+tk.W)
-
-    def load_PSF_file(self):
-        self.main_app.psf_parameters.read_data_and_parameters(self.main_app.psf_file.get())
-        if self.main_app.psf_parameters.is_initiated:
-            starting_zpos = self.main_app.psf_parameters.z_size // 2
-            self.main_app.middle_frame.psf_frame.zpos.set(starting_zpos)
-            self.main_app.middle_frame.psf_frame.updatePsfXY(starting_zpos)
-            starting_xypos = self.main_app.psf_parameters.xy_size // 2
-            self.main_app.middle_frame.psf_frame.ypos.set(starting_xypos)
-            self.main_app.middle_frame.psf_frame.updatePsfXZ(starting_xypos)
-
-            self.main_app.phase_retrieval_results.reset_pr_result()
-            self.main_app.middle_frame.pr_result_frame.reset()
-            self.main_app.middle_frame.pr_mse_frame.reset()
-            self.main_app.right_frame.zernike_frame.reset()
-            self.main_app.zernike_results.initialize_polynom_list()
-            self.main_app.right_frame.coefficient_frame.update_entries()
-
-    def initiate_pr(self):
-        if self.main_app.psf_parameters.verify():
-
-            psf_parameters = dict(
-                wl=self.main_app.psf_parameters.em_wavelength.value.get(),
-                na=self.main_app.psf_parameters.num_aperture.value.get(),
-                ni=self.main_app.psf_parameters.refractive_index.value.get(),
-                res=self.main_app.psf_parameters.xy_res.value.get(),
-                zres=self.main_app.psf_parameters.z_res.value.get(),
-            )
-            pr_parameters = dict(
-                max_iters=self.main_app.psf_parameters.max_iterations.value.get(),
-                pupil_tol=self.main_app.psf_parameters.pupil_tolerance.value.get(),
-                mse_tol=self.main_app.psf_parameters.mse_tolerance.value.get(),
-            )
-
-            self.main_app.pr_state.reset_state()
-            self.main_app.middle_frame.pr_result_frame.reset()
-            self.main_app.middle_frame.pr_mse_frame.reset()
-            self.main_app.right_frame.zernike_frame.reset()
-            self.main_app.zernike_results.initialize_polynom_list()
-            self.main_app.right_frame.coefficient_frame.update_entries()
-
-            self.pr_thread = phaseretrieval_gui.PhaseRetrievalThreaded(self.main_app.psf_parameters.psf_data_prepped, psf_parameters, self.main_app.pr_state,
-                                                                       self.main_app.phase_retrieval_results, **pr_parameters)
-            self.pr_thread.daemon = True
-            self.pr_thread.start()
-            self.pr_button.configure(text="Stop Phase Retrieval", command=self.stop_pr)
-            self.main_app.pr_state.current_state.set("Phase retrieval running...")
-            self.main_app.after(250, self.main_app.check_pr_results)
-
-    def display_pr_results(self):
-
-        result_figure, _ = self.main_app.phase_retrieval_results.plot(self.main_app.figure_dpi)
-        self.main_app.image_streams.reset_image_stream(self.main_app.image_streams.pr_result_image_stream,
-                                                       result_figure)
-        self.main_app.middle_frame.pr_result_frame.show_results(result_figure)
-        mse_figure, _ = self.main_app.phase_retrieval_results.plot_convergence_gui(self.main_app.figure_dpi,
-                                                                                   self.main_app.psf_parameters.max_iterations.value.get())
-        self.main_app.image_streams.reset_image_stream(self.main_app.image_streams.pr_fiterror_image_stream,
-                                                       mse_figure)
-        self.main_app.middle_frame.pr_mse_frame.show_results(mse_figure)
-
-    def display_zd_results(self):
-        self.main_app.phase_retrieval_results.fit_to_zernikes(120)
-        self.main_app.zernike_fit_done.set(True)
-        zernike, _ = self.main_app.phase_retrieval_results.zd_result.plot_named_coefs(self.main_app.figure_dpi)
-        self.main_app.image_streams.reset_image_stream(self.main_app.image_streams.zd_decomposition_image_stream,
-                                                       zernike)
-        self.main_app.right_frame.zernike_frame.show_results(zernike)
-        self.main_app.zernike_results.get_decomposition_from_PhaseRetrieval(self.main_app.phase_retrieval_results,
-                                                                            self.main_app.psf_parameters.
-                                                                            phase_tolerance.value.get())
-        self.main_app.right_frame.coefficient_frame.update_entries()
-
-    def stop_pr(self):
-        self.pr_thread.stop_pr.set()
 
 
 class PrStatusFrame(tk.LabelFrame):
@@ -247,7 +172,7 @@ class PrStatusFrame(tk.LabelFrame):
         self.main_app = main_app
         self.iteration_text = tk.StringVar()
         self.iteration_text.set(" {} / {}".format(self.main_app.pr_state.current_iter.get(),
-                                                  self.main_app.psf_parameters.max_iterations.value.get()))
+                                                  self.main_app.psf_fit_parameters.max_iterations.value.get()))
         self.pupil_diff_text = tk.StringVar()
         self.pupil_diff_text.set(" {}".format(self.main_app.pr_state.current_pupil_diff.get()))
         self.mse_diff_text = tk.StringVar()
@@ -257,7 +182,7 @@ class PrStatusFrame(tk.LabelFrame):
     def widgets(self):
 
         self.progress_bar = ttk.Progressbar(self, mode='determinate',
-                                       max=self.main_app.psf_parameters.max_iterations.value.get(),
+                                       max=self.main_app.psf_fit_parameters.max_iterations.value.get(),
                                        variable=self.main_app.pr_state.current_iter,
                                        length=self.parent.current_frame_width)
         self.progress_bar.grid(row=0, column=0, columnspan=2, sticky=tk.E+tk.W, padx=5, pady=5)
@@ -266,7 +191,7 @@ class PrStatusFrame(tk.LabelFrame):
                                      font=("Arial", self.main_app.font_size), anchor=tk.W, justify=tk.LEFT)
         self.status_label.grid(row=1, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
 
-        self.main_app.psf_parameters.max_iterations.value.trace('w', self.update_status)
+        self.main_app.psf_fit_parameters.max_iterations.value.trace('w', self.update_status)
         self.main_app.pr_state.current_iter.trace('w', self.update_status)
 
         self.iterations_label = self.generate_status_entry("Current iteration",
@@ -295,10 +220,10 @@ class PrStatusFrame(tk.LabelFrame):
         try:
             if name == 'MAX_ITER':
                 self.main_app.pr_state.current_iter.set(0)
-                self.progress_bar.configure(max=self.main_app.psf_parameters.max_iterations.value.get())
+                self.progress_bar.configure(max=self.main_app.psf_fit_parameters.max_iterations.value.get())
 
             self.iteration_text.set("{} / {}".format(self.main_app.pr_state.current_iter.get(),
-                                                     self.main_app.psf_parameters.max_iterations.value.get()))
+                                                     self.main_app.psf_fit_parameters.max_iterations.value.get()))
 
             self.pupil_diff_text.set(" {:.2E}".format(self.main_app.pr_state.current_pupil_diff.get()))
 
@@ -381,7 +306,7 @@ class PsfFrame(tk.LabelFrame):
     def createPsfXY(self, current_zpos):
         psf_xy = plt.figure(figsize=(6, 6), dpi=self.main_app.figure_dpi)
         xy_ax = psf_xy.add_axes([0, 0, 1, 1])
-        xy_ax.matshow(self.main_app.psf_parameters.psf_data[int(current_zpos)], cmap="inferno")
+        xy_ax.matshow(self.main_app.psf_fit_parameters.psf_data[int(current_zpos)], cmap="inferno")
         self.main_app.image_streams.reset_image_stream(self.main_app.image_streams.psf_image_stream_xy,
                                                        psf_xy)
         psf_xy_figure = FigureCanvasTkAgg(psf_xy, master=self)
@@ -393,8 +318,8 @@ class PsfFrame(tk.LabelFrame):
         xz_ax = psf_xz.add_axes([0, 0, 1, 1])
         xz_ax.xaxis.set_visible(False)
         psf_xz.patch.set_facecolor('black')
-        aspect_z_xy = self.main_app.psf_parameters.z_res.value.get() / float(self.main_app.psf_parameters.xy_res.value.get())
-        xz_ax.matshow(self.main_app.psf_parameters.psf_data[:,int(current_line_pos),:],
+        aspect_z_xy = self.main_app.psf_fit_parameters.z_res.value.get() / float(self.main_app.psf_fit_parameters.xy_res.value.get())
+        xz_ax.matshow(self.main_app.psf_fit_parameters.psf_data[:,int(current_line_pos),:],
                       cmap="inferno", aspect=aspect_z_xy)
         self.main_app.image_streams.reset_image_stream(self.main_app.image_streams.psf_image_stream_xz,
                                                        psf_xz)
@@ -407,14 +332,14 @@ class PsfFrame(tk.LabelFrame):
         self.psf_xy_figure = self.createPsfXY(current_zpos)
         self.psf_xy_figure._tkcanvas.grid(row=0, column=0, padx=5, pady=5)
         obsolete_canvas._tkcanvas.destroy()
-        self.zstack_slider.configure(state=tk.NORMAL, to=self.main_app.psf_parameters.z_size - 1)
+        self.zstack_slider.configure(state=tk.NORMAL, to=self.main_app.psf_fit_parameters.z_size - 1)
 
     def updatePsfXZ(self, current_ypos):
         obsolete_canvas = self.psf_xz_figure
         self.psf_xz_figure = self.createPsfXZ(current_ypos)
         self.psf_xz_figure._tkcanvas.grid(row=0, column=1, padx=5, pady=5)
         obsolete_canvas._tkcanvas.destroy()
-        self.ypos_slider.configure(state=tk.NORMAL, to=self.main_app.psf_parameters.xy_size - 1)
+        self.ypos_slider.configure(state=tk.NORMAL, to=self.main_app.psf_fit_parameters.xy_size - 1)
 
 
 class ResultFrame(tk.LabelFrame):
@@ -547,7 +472,7 @@ class ResultButtonFrame(tk.LabelFrame):
         xlsx_path = os.path.join(self.main_app.result_directory.get(),
                                  os.path.splitext(self.main_app.psf_filename)[0] + '_zd_results.xlsx')
         try:
-            TrackingClasses.ZdResultWorkbook(xlsx_path, self.main_app.psf_file.get(), self.main_app.psf_parameters,
+            TrackingClasses.ZdResultWorkbook(xlsx_path, self.main_app.psf_file.get(), self.main_app.psf_fit_parameters,
                                              self.main_app.zernike_results, self.main_app.pr_state)
         except Exception as pop_up_alert:
             messagebox.showwarning("Saving results as .xlsx failed", str(pop_up_alert))
@@ -555,7 +480,7 @@ class ResultButtonFrame(tk.LabelFrame):
     def generate_pdf_report(self):
         pdf_path = os.path.join(self.main_app.result_directory.get(),
                                 os.path.splitext(self.main_app.psf_filename)[0] + '_report.pdf')
-        pdf_report = TrackingClasses.PdfReport(pdf_path, self.main_app.psf_file.get(), self.main_app.psf_parameters,
+        pdf_report = TrackingClasses.PdfReport(pdf_path, self.main_app.psf_file.get(), self.main_app.psf_fit_parameters,
                                                self.main_app.zernike_results, self.main_app.image_streams,
                                                self.main_app.pr_state)
         try:
@@ -565,14 +490,17 @@ class ResultButtonFrame(tk.LabelFrame):
 
 class MainWindow(tk.Tk):
 
-    def __init__(self, parent, screen_height, scaling_factor):
-        tk.Tk.__init__(self, parent)
+    def __init__(self, screen_height, scaling_factor):
+        tk.Tk.__init__(self)
+
+        # start a JVM, needed to run the bioformats class used in bioformats_helper.PsfImageDataAndParameters
         javabridge.start_vm(class_path=bioformats.JARS)
-        self.parent = parent
+
+        # Set up the main window and font size and figure resolution according to the screen resolution
+        #TODO: test this for different environments
         self.title("Phase retrieval from PSF")
         self.window_height = int(0.7 * screen_height)
         self.scaling_factor = scaling_factor
-
         self.window_width = int(1.43 * self.window_height)
         window_size = '{}x{}'.format(str(self.window_width), str(self.window_height))
         self.geometry(window_size)
@@ -580,7 +508,11 @@ class MainWindow(tk.Tk):
 
         self.font_size = int((30 * 1080) / (screen_height * self.scaling_factor))
         self.figure_dpi = int((180 * 1080) / screen_height)
-        self.psf_parameters = TrackingClasses.PsfandFitParameters()
+
+        # Instantiate the class tracking PSF and fit parameters
+        self.psf_fit_parameters = TrackingClasses.PsfandFitParameters()
+
+        # Initialize the variables tracking PSF file and results directory
         self.psf_file = tk.StringVar()
         self.psf_file.set('Select a PSF file...')
         self.psf_directory = tk.StringVar()
@@ -588,17 +520,20 @@ class MainWindow(tk.Tk):
         self.psf_filename = None
         self.result_directory = tk.StringVar()
         self.result_directory.set('Select a result directory...')
-        self.pr_state = TrackingClasses.PrState()
-        self.phase_retrieval_results = phaseretrieval_gui.PhaseRetrievalResult()
-        self.phase_retrieval_done = tk.BooleanVar()
-        self.phase_retrieval_done.set(False)
-        self.zernike_results = TrackingClasses.ZernikeDecomposition()
-        self.zernike_fit_done = tk.BooleanVar()
-        self.zernike_fit_done.set(False)
-        self.image_streams = TrackingClasses.ResultImageStreams()
-        self.main_widgets()
 
-    def main_widgets(self):
+        # Instantiate the class tracking the state of the Phase Retrieval Algorithm
+        self.pr_state = TrackingClasses.PrState()
+
+        # Instantiate the class tracking the Phase Retrieval Algorithm results
+        self.phase_retrieval_results = phaseretrieval_gui.PhaseRetrievalResult()
+
+        # Instantiate the class tracking the Zernike Decomposition results
+        self.zernike_results = TrackingClasses.ZernikeDecomposition()
+
+        # Instantiate the class storing the GUI images as Bytestreams
+        self.image_streams = TrackingClasses.ResultImageStreams()
+
+        # Create the first level frames
         self.left_frame = ParameterFrame(self, self)
         self.left_frame.grid(row=0, column=0, sticky=tk.N)
         self.middle_frame = ImageFrame(self, self)
@@ -606,23 +541,91 @@ class MainWindow(tk.Tk):
         self.right_frame = ZernikeFrame(self, self)
         self.right_frame.grid(row=0, column=2, sticky=tk.N)
 
+    def load_PSF_file(self):
+        self.main_app.psf_fit_parameters.read_data_and_parameters(self.main_app.psf_file.get())
+        if self.main_app.psf_fit_parameters.is_initiated:
+            starting_zpos = self.main_app.psf_fit_parameters.z_size // 2
+            self.main_app.middle_frame.psf_frame.zpos.set(starting_zpos)
+            self.main_app.middle_frame.psf_frame.updatePsfXY(starting_zpos)
+            starting_xypos = self.main_app.psf_fit_parameters.xy_size // 2
+            self.main_app.middle_frame.psf_frame.ypos.set(starting_xypos)
+            self.main_app.middle_frame.psf_frame.updatePsfXZ(starting_xypos)
+
+            self.main_app.phase_retrieval_results.reset_pr_result()
+            self.main_app.middle_frame.pr_result_frame.reset()
+            self.main_app.middle_frame.pr_mse_frame.reset()
+            self.main_app.right_frame.zernike_frame.reset()
+            self.main_app.zernike_results.initialize_polynom_list()
+            self.main_app.right_frame.coefficient_frame.update_entries()
+
+    def initiate_pr(self):
+        if self.psf_fit_parameters.verify():
+            self.pr_state.reset_state()
+            self.middle_frame.pr_result_frame.reset()
+            self.middle_frame.pr_mse_frame.reset()
+            self.right_frame.zernike_frame.reset()
+            self.zernike_results.initialize_polynom_list()
+            self.right_frame.coefficient_frame.update_entries()
+
+            self.pr_thread = phaseretrieval_gui.PhaseRetrievalThreaded(self.psf_fit_parameters.psf_data_prepped,
+                                                                       self.psf_fit_parameters.psf_parameter_dict(),
+                                                                       self.pr_state,
+                                                                       self.phase_retrieval_results,
+                                                                       **self.psf_fit_parameters.fit_parameter_dict(),
+                                                                       )
+            self.pr_thread.daemon = True
+            self.pr_thread.start()
+            self.pr_button.configure(text="Stop Phase Retrieval", command=self.stop_pr)
+            self.pr_state.current_state.set("Phase retrieval running...")
+            self.after(250, self.check_pr_results)
+
     def check_pr_results(self):
-        if(self.left_frame.action_button_frame.pr_thread.is_alive()):
+        """Checks every 250 ms, whether phaseretrieval_gui.PhaseRetrievalThreaded is still running. If the thread
+            is not alive(finished or has been aborted), update the GUI display, reset the PR_button to start the next
+            Phase Retrieval Algorithm. Calls itself, if the thread is still running and updates the GUI display every
+            five iterations.
+        """
+        if self.pr_thread.is_alive():
             self.left_frame.status_frame.update()
             self.after(250, self.check_pr_results)
             if self.pr_state.current_iter.get() != 0 and self.pr_state.current_iter.get() % 5 == 0:
-                self.left_frame.action_button_frame.display_pr_results()
+                self.display_pr_results()
         else:
-            self.left_frame.action_button_frame.display_pr_results()
-            self.left_frame.action_button_frame.display_zd_results()
+            self.display_pr_results()
+            self.display_zd_results()
             self.left_frame.status_frame.update_status(None, None, None)
             self.left_frame.action_button_frame.pr_button.configure(text="Start Phase Retrieval",
-                                                                    command=self.left_frame.action_button_frame.
-                                                                    initiate_pr)
+                                                                    command=self.initiate_pr)
             self.pr_state.pr_finished.set(True)
 
+    def display_pr_results(self):
+        result_figure, _ = self.phase_retrieval_results.plot(self.figure_dpi)
+        self.image_streams.reset_image_stream(self.image_streams.pr_result_image_stream, result_figure)
+        self.middle_frame.pr_result_frame.show_results(result_figure)
+
+        mse_figure, _ = self.phase_retrieval_results.plot_convergence_gui(self.figure_dpi,
+                                                                          self.psf_fit_parameters.
+                                                                          max_iterations.value.get())
+        self.image_streams.reset_image_stream(self.image_streams.pr_fiterror_image_stream, mse_figure)
+        self.middle_frame.pr_mse_frame.show_results(mse_figure)
+
+    def display_zd_results(self):
+        self.phase_retrieval_results.fit_to_zernikes(120)
+
+        zernike_figure, _ = self.phase_retrieval_results.zd_result.plot_named_coefs(self.figure_dpi)
+        self.image_streams.reset_image_stream(self.image_streams.zd_decomposition_image_stream, zernike_figure)
+        self.right_frame.zernike_frame.show_results(zernike_figure)
+
+        self.zernike_results.decomposition_from_phase_retrieval(self.phase_retrieval_results, self.psf_fit_parameters.
+                                                                phase_tolerance.value.get())
+        self.right_frame.coefficient_frame.update_entries()
+
+    def stop_pr(self):
+        """Sets the stop_pr flag, breaks out of the iteration loop in phaseretrieval_gui.PhaseRetrievalThreaded"""
+        self.pr_thread.stop_pr.set()
 
     def clean_up(self):
+        """Ensures that the JVM is killed, before the tk.root is destroyed"""
         if messagebox.askokcancel("Quit", "Do you want to quit?"):
             javabridge.kill_vm()
             self.destroy()
@@ -634,7 +637,7 @@ if __name__ == "__main__":
     user32.SetProcessDPIAware(1)
     screen_height = user32.GetSystemMetrics(1)
     scaling = screen_height / virtual_screen_height
-    app = MainWindow(None, screen_height, scaling)
+    app = MainWindow(screen_height, scaling)
     app.protocol("WM_DELETE_WINDOW", app.clean_up)
     app.mainloop()
 
