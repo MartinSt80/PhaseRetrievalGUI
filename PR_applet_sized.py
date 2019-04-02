@@ -1,349 +1,38 @@
 # coding: utf-8
+"""
+Graphical user interface
+Back focal plane (pupil) phase retrieval algorithm base on:
+[(1) Hanser, B. M.; Gustafsson, M. G. L.; Agard, D. A.; Sedat, J. W.
+Phase Retrieval for High-Numerical-Aperture Optical Systems.
+Optics Letters 2003, 28 (10), 801.](dx.doi.org/10.1364/OL.28.000801)
+
+Copyright (c) 2016, David Hoffman
+
+The original phaseretrieval.py has been changed to a threading.Thread class, to allow it to run in parallel with the
+tkinter mainloop. This is needed to make the tkinter gui responsive during calculation and allows for intermediate
+results to be displayed.
+
+Copyright (c) 2019, Martin Stoeckl
+"""
+
 
 import os
-import time
-import xlsxwriter
 from ctypes import *
-from io import BytesIO
 import tkinter as tk
 from tkinter import ttk
 from tkinter import filedialog
 from tkinter import messagebox
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from reportlab.pdfgen import canvas
-from reportlab.lib.utils import ImageReader
+
 import javabridge
 import bioformats
-import bioformats_helper
 
 from pyOTF import phaseretrieval_gui
 from pyOTF import utils
-from pyOTF import zernike
 
+import TrackingClasses
 
-class PsfParameters:
-
-    class PsfFitParameter:
-            def __init__(self, name, value, unit, initiated):
-                self.name = name
-                self.value = value
-                self.unit = unit
-                self.initiated = initiated
-
-    def __init__(self, main_app):
-
-        self.main_app = main_app
-
-        self.em_wavelength = self.PsfFitParameter(name='Emission wavelength', value=tk.IntVar(), unit='nm',
-                                                  initiated=False)
-        self.num_aperture = self.PsfFitParameter(name='Numerical aperture', value=tk.DoubleVar(), unit='',
-                                                 initiated=False)
-        self.refractive_index = self.PsfFitParameter(name='Refractive index', value=tk.DoubleVar(), unit='',
-                                                     initiated=False)
-        self.xy_res = self.PsfFitParameter(name='xy-Resolution', value=tk.IntVar(), unit='nm',
-                                           initiated=False)
-        self.z_res = self.PsfFitParameter(name='z-Resolution', value=tk.IntVar(), unit='nm',
-                                          initiated=False)
-        self.is_initiated = False
-        self.psf_data = None
-        self.xy_size = None
-        self.z_size = None
-
-        self.max_iterations = self.PsfFitParameter(name='Maximum iterations', value=tk.IntVar(name='MAX_ITER'), unit='',
-                                                   initiated=True)
-        self.max_iterations.value.set(200)
-        self.pupil_tolerance = self.PsfFitParameter(name='Minimal pupil function difference', value=tk.DoubleVar(), unit='',
-                                                    initiated=True)
-        self.pupil_tolerance.value.set(float(1e-8))
-        self.mse_tolerance = self.PsfFitParameter(name='Minimal relative MSE difference', value=tk.DoubleVar(), unit='',
-                                                  initiated=True)
-        self.mse_tolerance.value.set(float(1e-8))
-        self.phase_tolerance = self.PsfFitParameter(name='Tolerable phase deviation', value=tk.DoubleVar(), unit='λ',
-                                                    initiated=True)
-        self.phase_tolerance.value.set(0.5)
-
-    def read_data_and_parameters(self):
-        try:
-            psf_info = bioformats_helper.PsfImageDataAndParameters(self.main_app.psf_file.get())
-        except AssertionError as pop_up_alert:
-            self.pop_up_error_window(pop_up_alert)
-        except Exception as pop_up_alert:
-            self.pop_up_error_window(pop_up_alert, title='Invalid PSF file path')
-        else:
-            self.num_aperture.value.set(psf_info.numerical_aperture)
-            self.num_aperture.initiated = True
-            self.refractive_index.value.set(psf_info.refractive_index)
-            self.refractive_index.initiated = True
-            self.xy_res.value.set(psf_info.pixel_size_xy)
-            self.xy_res.initiated = True
-            self.z_res.value.set(psf_info.pixel_size_z)
-            self.z_res.initiated = True
-            self.xy_size = psf_info.image_size_xy
-            self.z_size = psf_info.image_size_z
-            self.psf_data = psf_info.image_data
-            self.is_initiated = True
-
-    def verify(self):
-
-        parameters_initialized = (self.em_wavelength.value.get(),
-                                   self.num_aperture.value.get(),
-                                   self.refractive_index.value.get(),
-                                   self.xy_res.value.get(),
-                                   self.z_res.value.get(),
-                                   )
-        try:
-            assert all(parameters_initialized), \
-                'Not all PSF parameters initialized correctly.'
-
-            assert self.psf_data.shape == (self.z_size, self.xy_size, self.xy_size), \
-                'PSF data array is not shaped correctly.'
-
-        except AssertionError as pop_up_alert:
-            self.pop_up_error_window(pop_up_alert, title='Invalid PSF parameters')
-            return False
-
-        else:
-            return True
-
-    def pop_up_error_window(self, error, title='Unsuitable PSF file loaded'):
-       messagebox.showwarning(title, str(error))
-
-class ZernikeDecomposition:
-
-    class ZernikePolynom:
-
-        def __init__(self, order, name, value, in_tolerance):
-            self.order = order
-            self.name = name
-            self.value = value
-            self.in_tolerance = in_tolerance
-
-
-    def __init__(self, main_app):
-        self.main_app = main_app
-        self.zernike_names_dict = zernike.noll2name
-        self.ordered_coeff_names = [self.zernike_names_dict[i + 1] for i in range(len(self.zernike_names_dict))]
-        self.zernike_polynoms = []
-        self.important_coeff_orders = [5, 6, 7, 8, 11]
-        self.initialize_polynom_list()
-
-    def initialize_polynom_list(self):
-        self.zernike_polynoms = []
-        for order, name in self.zernike_names_dict.items():
-            temp_zp = self.ZernikePolynom(order, name, 0, None)
-            self.zernike_polynoms.append(temp_zp)
-        self.zernike_polynoms.sort(key=lambda p: p.order)
-
-    def get_decomposition_from_PhaseRetrieval(self):
-        ordered_phase_coefficients = self.main_app.phase_retrieval_results.zd_result.pcoefs[:len(self.ordered_coeff_names)]
-        for polynom, phase_coefficient in zip(self.zernike_polynoms, ordered_phase_coefficients):
-            polynom.value = phase_coefficient
-            if abs(phase_coefficient) < self.main_app.psf_parameters.phase_tolerance.value.get():
-                polynom.in_tolerance = True
-            else:
-                polynom.in_tolerance = False
-
-
-class ResultImageStreams:
-
-    def __init__(self):
-        self.psf_image_stream_xy = BytesIO()
-        self.psf_image_stream_xz = BytesIO()
-        self.pr_result_image_stream = BytesIO()
-        self.pr_fiterror_image_stream = BytesIO()
-        self.zd_decomposition_image_stream = BytesIO()
-
-
-    def reset_image_stream(self, stream, image):
-        stream.truncate()
-        stream.seek(0)
-        image.savefig(stream, dpi=300, format='png')
-
-
-class ZdResultWorkbook(xlsxwriter.Workbook):
-
-    def __init__(self, main_app, save_path):
-
-        super(ZdResultWorkbook, self).__init__(save_path)
-        self.main_app = main_app
-        self.psf_parameters = main_app.psf_parameters
-        self.zernike_results = main_app.zernike_results
-        self.bold_format = self.add_format({'bold': True})
-        self.short_number_format = self.add_format()
-        self.short_number_format.set_num_format('0.00')
-        self.add_entries()
-
-    def add_entries(self):
-        worksheet = self.add_worksheet('Zernike decomposition')
-        worksheet.write(0, 0, self.main_app.psf_file.get(), self.bold_format)
-
-        worksheet.write(2, 0, 'PSF Parameters', self.bold_format)
-        worksheet.write(3, 0, self.psf_parameters.em_wavelength.name + ' in nm')
-        worksheet.write(3, 1, self.psf_parameters.em_wavelength.value.get())
-        worksheet.write(4, 0, self.psf_parameters.num_aperture.name)
-        worksheet.write(4, 1, self.psf_parameters.num_aperture.value.get())
-        worksheet.write(5, 0, self.psf_parameters.refractive_index.name)
-        worksheet.write(5, 1, self.psf_parameters.refractive_index.value.get())
-        worksheet.write(6, 0, self.psf_parameters.xy_res.name + ' in nm')
-        worksheet.write(6, 1, self.psf_parameters.xy_res.value.get())
-        worksheet.write(7, 0, self.psf_parameters.z_res.name + ' in nm')
-        worksheet.write(7, 1, self.psf_parameters.z_res.value.get())
-
-        worksheet.write(2, 2, 'Phase Retrieval Parameters', self.bold_format)
-        worksheet.write(3, 2, self.psf_parameters.max_iterations.name)
-        worksheet.write(3, 3, self.psf_parameters.max_iterations.value.get())
-        worksheet.write(4, 2, self.psf_parameters.pupil_tolerance.name)
-        worksheet.write(4, 3, self.psf_parameters.pupil_tolerance.value.get())
-        worksheet.write(5, 2, self.psf_parameters.mse_tolerance.name)
-        worksheet.write(5, 3, self.psf_parameters.mse_tolerance.value.get())
-
-
-        worksheet.write(9, 0, 'Zernike Decomposition Results', self.bold_format)
-        worksheet.write(10, 0, 'Noll Order', self.bold_format)
-        worksheet.write(10, 1, 'Noll Name', self.bold_format)
-        worksheet.write(10, 2, 'Value', self.bold_format)
-
-        for polynom, row in zip(self.zernike_results.zernike_polynoms,
-                                range(len(self.zernike_results.zernike_polynoms))):
-            worksheet.write(row + 11, 0, polynom.order)
-            worksheet.write(row + 11, 1, polynom.name)
-            worksheet.write(row + 11, 2, polynom.value, self.short_number_format)
-
-        self.close()
-
-
-class PdfReport:
-
-    def __init__(self, main_app, save_path):
-
-        self.save_path = save_path
-        self.psf_filename = os.path.splitext(main_app.psf_filename)[0]
-        self.psf_parameters = main_app.psf_parameters
-        self.zernike_results = main_app.zernike_results
-        self.image_streams = main_app.image_streams
-        self.pr_state = main_app.pr_state
-
-    def create_pdf_report(self):
-
-        def generate_psf_entry(ypos, parameter):
-            xpos_name = 370
-            xpos_value = 545
-            xpos_unit = 550
-
-            c.drawString(xpos_name, ypos, parameter.name)
-            c.drawRightString(xpos_value, ypos, str(parameter.value.get()))
-            c.drawString(xpos_unit, ypos, parameter.unit)
-
-        psf_xy_image = ImageReader(self.image_streams.psf_image_stream_xy)
-        psf_xz_image = ImageReader(self.image_streams.psf_image_stream_xz)
-        pr_res_image = ImageReader(self.image_streams.pr_result_image_stream)
-        pr_mse_image = ImageReader(self.image_streams.pr_fiterror_image_stream)
-        zd_res_image = ImageReader(self.image_streams.zd_decomposition_image_stream)
-
-        c = canvas.Canvas(self.save_path)
-        c.setFont('Helvetica-Bold', 16)
-        c.drawString(100, 790, "Phase retrieval analysis")
-        c.setFont('Helvetica-Bold', 12)
-        c.drawString(100, 760, "PSF file: ")
-        c.setFont('Helvetica', 10)
-        c.drawString(155, 760, self.psf_filename)
-
-        c.setFont('Helvetica-Bold', 10)
-        c.drawString(100, 730, "PSF previews")
-
-
-        c.setFont('Helvetica-Bold', 10)
-        c.drawString(370, 730, "PSF & Fit parameters")
-
-        c.setFont('Helvetica', 10)
-        generate_psf_entry(710, self.psf_parameters.em_wavelength)
-        generate_psf_entry(693, self.psf_parameters.num_aperture)
-        generate_psf_entry(676, self.psf_parameters.refractive_index)
-        generate_psf_entry(659, self.psf_parameters.xy_res)
-        generate_psf_entry(642, self.psf_parameters.z_res)
-        generate_psf_entry(617, self.psf_parameters.max_iterations)
-        generate_psf_entry(600, self.psf_parameters.pupil_tolerance)
-        generate_psf_entry(583, self.psf_parameters.mse_tolerance)
-        generate_psf_entry(566, self.psf_parameters.phase_tolerance)
-
-        c.setFont('Helvetica', 10)
-        c.drawString(100, 710, "PSF x/y")
-        c.drawString(230, 710, "PSF x/z")
-
-        c.drawImage(psf_xy_image, 100, 585, width=120, height=120, mask=None)
-        c.drawImage(psf_xz_image, 230, 585, width=120, height=120, mask=None)
-
-        c.setFont('Helvetica-Bold', 12)
-        c.drawString(100, 550, "Phase retrieval results")
-        c.drawImage(pr_res_image, 100, 390, width=360, height=150, mask=None)
-        c.drawImage(pr_mse_image, 100, 325, width=288, height=72, mask=None)
-
-        c.setFont('Helvetica', 8)
-        condition_strings = self.pr_state.current_state.get().split('\n')
-        if len(condition_strings) == 1:
-            condition_string = "{} after {} iterations.".format(condition_strings[0][:-1], self.pr_state.current_iter.get())
-            c.drawString(395, 340, condition_string)
-        if len(condition_strings) == 2 and self.pr_state.current_iter.get() == self.psf_parameters.max_iterations.value.get():
-            c.drawString(395, 355, condition_strings[0])
-            c.drawString(395, 340, condition_strings[1])
-        if len(condition_strings) == 2 and self.pr_state.current_iter.get() < self.psf_parameters.max_iterations.value.get():
-            condition_string = "During iteration {} / {} ".format(self.pr_state.current_iter.get(),
-                                                                  self.psf_parameters.max_iterations.value.get())
-            c.drawString(395, 355, condition_string)
-            c.drawString(395, 340, condition_strings[1])
-
-
-        c.setFont('Helvetica-Bold', 12)
-        c.drawString(100, 310, "Zernike decomposition results")
-        c.drawImage(zd_res_image, 100, 60, width=240, height=240, mask=None)
-        c.setFont('Helvetica-Bold', 10)
-        c.drawString(350, 285, "Zernike Polynom")
-        c.drawString(520, 285, "Value / λ")
-
-        y_pos = 265
-        for polynom in self.zernike_results.zernike_polynoms:
-            c.setFillColorRGB(0, 0, 0)
-            if polynom.order in self.zernike_results.important_coeff_orders:
-                font = 'Helvetica-Bold'
-            else:
-                font = 'Helvetica'
-            c.setFont(font, 10)
-            c.drawString(350, y_pos, polynom.name)
-            if polynom.in_tolerance:
-                c.setFillColorRGB(0.22, 0.67, 0.15)
-            else:
-                c.setFillColorRGB(0.9, 0.07, 0.07)
-            string_width = c.stringWidth("{:.2f}".format(polynom.value), font, 10)
-            """ string_width pos value: 19.46, neg value = 22.79, needed for right alignment"""
-            c.drawString(520 + 22.79 - string_width, y_pos, "{:.2f}".format(polynom.value))
-            y_pos -= 17
-
-        generation_time = time.strftime("%d.%m.%Y - %H:%M:%S ", time.localtime())
-        c.setFont('Helvetica', 10)
-        c.setFillColorRGB(0, 0, 0)
-        c.drawString(100, 10, "Report generated on: " + generation_time)
-
-        c.showPage()
-        c.save()
-
-
-class PrState:
-
-    def __init__(self):
-        self.current_state = tk.StringVar()
-        self.current_state.set("Phase retrieval not started yet")
-        self.current_iter = tk.IntVar()
-        self.current_pupil_diff = tk.DoubleVar()
-        self.current_mse_diff = tk.DoubleVar()
-        self.pr_finished = tk.BooleanVar()
-        self.pr_finished.set(False)
-
-    def reset_state(self):
-        self.current_iter.set(0)
-        self.current_pupil_diff.set(0)
-        self.current_mse_diff.set(0)
-        self.pr_finished.set(False)
 
 
 class ParameterFrame(tk.Frame):
@@ -475,7 +164,7 @@ class PsfButtonFrame(tk.Frame):
         self.pr_button.grid(row=0, column=1, padx=5, pady=5, sticky=tk.E+tk.W)
 
     def load_PSF_file(self):
-        self.main_app.psf_parameters.read_data_and_parameters()
+        self.main_app.psf_parameters.read_data_and_parameters(self.main_app.psf_file.get())
         if self.main_app.psf_parameters.is_initiated:
             starting_zpos = self.main_app.psf_parameters.z_size // 2
             self.main_app.middle_frame.psf_frame.zpos.set(starting_zpos)
@@ -493,8 +182,7 @@ class PsfButtonFrame(tk.Frame):
 
     def initiate_pr(self):
         if self.main_app.psf_parameters.verify():
-            psf_data_prepped = utils.prep_data_for_PR(self.main_app.psf_parameters.psf_data,
-                                                      self.main_app.psf_parameters.xy_size * 2)
+
             psf_parameters = dict(
                 wl=self.main_app.psf_parameters.em_wavelength.value.get(),
                 na=self.main_app.psf_parameters.num_aperture.value.get(),
@@ -515,7 +203,7 @@ class PsfButtonFrame(tk.Frame):
             self.main_app.zernike_results.initialize_polynom_list()
             self.main_app.right_frame.coefficient_frame.update_entries()
 
-            self.pr_thread = phaseretrieval_gui.PhaseRetrievalThreaded(psf_data_prepped, psf_parameters, self.main_app.pr_state,
+            self.pr_thread = phaseretrieval_gui.PhaseRetrievalThreaded(self.main_app.psf_parameters.psf_data_prepped, psf_parameters, self.main_app.pr_state,
                                                                        self.main_app.phase_retrieval_results, **pr_parameters)
             self.pr_thread.daemon = True
             self.pr_thread.start()
@@ -542,7 +230,9 @@ class PsfButtonFrame(tk.Frame):
         self.main_app.image_streams.reset_image_stream(self.main_app.image_streams.zd_decomposition_image_stream,
                                                        zernike)
         self.main_app.right_frame.zernike_frame.show_results(zernike)
-        self.main_app.zernike_results.get_decomposition_from_PhaseRetrieval()
+        self.main_app.zernike_results.get_decomposition_from_PhaseRetrieval(self.main_app.phase_retrieval_results,
+                                                                            self.main_app.psf_parameters.
+                                                                            phase_tolerance.value.get())
         self.main_app.right_frame.coefficient_frame.update_entries()
 
     def stop_pr(self):
@@ -857,14 +547,17 @@ class ResultButtonFrame(tk.LabelFrame):
         xlsx_path = os.path.join(self.main_app.result_directory.get(),
                                  os.path.splitext(self.main_app.psf_filename)[0] + '_zd_results.xlsx')
         try:
-            ZdResultWorkbook(self.main_app, xlsx_path)
+            TrackingClasses.ZdResultWorkbook(xlsx_path, self.main_app.psf_file.get(), self.main_app.psf_parameters,
+                                             self.main_app.zernike_results, self.main_app.pr_state)
         except Exception as pop_up_alert:
             messagebox.showwarning("Saving results as .xlsx failed", str(pop_up_alert))
 
     def generate_pdf_report(self):
         pdf_path = os.path.join(self.main_app.result_directory.get(),
-                                 os.path.splitext(self.main_app.psf_filename)[0] + '_report.pdf')
-        pdf_report = PdfReport(self.main_app, pdf_path)
+                                os.path.splitext(self.main_app.psf_filename)[0] + '_report.pdf')
+        pdf_report = TrackingClasses.PdfReport(pdf_path, self.main_app.psf_file.get(), self.main_app.psf_parameters,
+                                               self.main_app.zernike_results, self.main_app.image_streams,
+                                               self.main_app.pr_state)
         try:
             pdf_report.create_pdf_report()
         except Exception as pop_up_alert:
@@ -887,7 +580,7 @@ class MainWindow(tk.Tk):
 
         self.font_size = int((30 * 1080) / (screen_height * self.scaling_factor))
         self.figure_dpi = int((180 * 1080) / screen_height)
-        self.psf_parameters = PsfParameters(self)
+        self.psf_parameters = TrackingClasses.PsfandFitParameters()
         self.psf_file = tk.StringVar()
         self.psf_file.set('Select a PSF file...')
         self.psf_directory = tk.StringVar()
@@ -895,14 +588,14 @@ class MainWindow(tk.Tk):
         self.psf_filename = None
         self.result_directory = tk.StringVar()
         self.result_directory.set('Select a result directory...')
-        self.pr_state = PrState()
+        self.pr_state = TrackingClasses.PrState()
         self.phase_retrieval_results = phaseretrieval_gui.PhaseRetrievalResult()
         self.phase_retrieval_done = tk.BooleanVar()
         self.phase_retrieval_done.set(False)
-        self.zernike_results = ZernikeDecomposition(self)
+        self.zernike_results = TrackingClasses.ZernikeDecomposition()
         self.zernike_fit_done = tk.BooleanVar()
         self.zernike_fit_done.set(False)
-        self.image_streams = ResultImageStreams()
+        self.image_streams = TrackingClasses.ResultImageStreams()
         self.main_widgets()
 
     def main_widgets(self):
