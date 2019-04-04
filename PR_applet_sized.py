@@ -15,7 +15,6 @@ results to be displayed.
 Copyright (c) 2019, Martin Stoeckl
 """
 
-
 import os
 from ctypes import *
 import tkinter as tk
@@ -29,24 +28,33 @@ import javabridge
 import bioformats
 
 from pyOTF import phaseretrieval_gui
-from pyOTF import utils
 
 import TrackingClasses
 
 
-
 class ParameterFrame(tk.Frame):
+    """
+    The left frame in the GUI. Select PSF file and result directory, enter PSF and Fit Parameters, load PSF file,
+    start/stop the Phase Retrieval Algorithm, show the current state of the PR Algorithm in its subframes.
 
-    def __init__(self, parent, main_app):
+        Arguments
+        ----------
+        parent: tk.Frame
+            The parent frame (tk.Root)
+
+        Parameters
+        -----------
+        self.current_frame_width: int
+            Width of the frame in pixels
+    """
+
+    def __init__(self, parent):
         tk.Frame.__init__(self, parent)
-        self.parent = parent
-        self.main_app = main_app
         self.current_frame_width = None
         self.widgets()
 
     def widgets(self):
-
-        self.filedialog_frame = FileDialogFrame(self, self.main_app, "Select PSF file & Result directory")
+        self.filedialog_frame = FileDialogFrame(self, "Select PSF file & Result directory")
         self.filedialog_frame.grid(row=0, column=0, sticky=tk.W+tk.E, padx=5, pady=5)
         self.filedialog_frame.update()
         self.current_frame_width = self.filedialog_frame.winfo_width()
@@ -215,7 +223,6 @@ class PrStatusFrame(tk.LabelFrame):
         return value_label
 
     def update_status(self, name, m, x):
-
         # throws exception if field is empty, because user deleted the entry
         try:
             if name == 'MAX_ITER':
@@ -443,7 +450,6 @@ class ResultButtonFrame(tk.LabelFrame):
 
 
     def toggle_buttons(self, n, m, x):
-
         for child in self.winfo_children():
             if self.main_app.pr_state.pr_finished.get():
                child.configure(state=tk.NORMAL)
@@ -489,7 +495,15 @@ class ResultButtonFrame(tk.LabelFrame):
             messagebox.showwarning("Creating a .pdf-report failed", str(pop_up_alert))
 
 class MainWindow(tk.Tk):
+    """ The tk.root for the GUI.
 
+        Arguments
+        ----------
+        screen_height: int
+            Actual screen height after windows scaling
+        scaling_factor: int
+            Scaling factor set for the screen by Windows
+    """
     def __init__(self, screen_height, scaling_factor):
         tk.Tk.__init__(self)
 
@@ -542,24 +556,41 @@ class MainWindow(tk.Tk):
         self.right_frame.grid(row=0, column=2, sticky=tk.N)
 
     def load_PSF_file(self):
-        self.main_app.psf_fit_parameters.read_data_and_parameters(self.main_app.psf_file.get())
-        if self.main_app.psf_fit_parameters.is_initiated:
-            starting_zpos = self.main_app.psf_fit_parameters.z_size // 2
-            self.main_app.middle_frame.psf_frame.zpos.set(starting_zpos)
-            self.main_app.middle_frame.psf_frame.updatePsfXY(starting_zpos)
-            starting_xypos = self.main_app.psf_fit_parameters.xy_size // 2
-            self.main_app.middle_frame.psf_frame.ypos.set(starting_xypos)
-            self.main_app.middle_frame.psf_frame.updatePsfXZ(starting_xypos)
+        """
+        Linked to the self.left_frame.action_button_frame.load_psf_button . Loads the PSF parameters and PSF data
+            from the selected file and displays the data (self.middle_frame.psf_frame)
+        """
+        # Load the PSF file store parameters and data
+        self.psf_fit_parameters.read_data_and_parameters(self.psf_file.get())
 
-            self.main_app.phase_retrieval_results.reset_pr_result()
-            self.main_app.middle_frame.pr_result_frame.reset()
-            self.main_app.middle_frame.pr_mse_frame.reset()
-            self.main_app.right_frame.zernike_frame.reset()
-            self.main_app.zernike_results.initialize_polynom_list()
-            self.main_app.right_frame.coefficient_frame.update_entries()
+        # If loading the PSF was successful...
+        if self.psf_fit_parameters.is_initiated:
+            # ...display PSF on the GUI and initialize the sliders
+            starting_zpos = self.psf_fit_parameters.z_size // 2
+            self.middle_frame.psf_frame.zpos.set(starting_zpos)
+            self.middle_frame.psf_frame.updatePsfXY(starting_zpos)
+            starting_xypos = self.psf_fit_parameters.xy_size // 2
+            self.middle_frame.psf_frame.ypos.set(starting_xypos)
+            self.middle_frame.psf_frame.updatePsfXZ(starting_xypos)
+            # ...reset the stored results in case there was a previous Phase Retrieval Algorithm run
+            self.phase_retrieval_results.reset_pr_result()
+            self.zernike_results.initialize_polynom_list()
+            # ... reset the GUI display
+            self.middle_frame.pr_result_frame.reset()
+            self.middle_frame.pr_mse_frame.reset()
+            self.right_frame.zernike_frame.reset()
+            self.right_frame.coefficient_frame.update_entries()
 
     def initiate_pr(self):
+        """
+        Linked to the self.left_frame.action_button_frame.pr_button . Checks, whether all parameters for the
+            Phase Retrieval Algorithm are set, resets the current state of the GUI and the internals, starts the
+            algorithm in its own thread, reconfigures the button to allow stopping the the thread and starts monitoring
+            the current state of the thread
+        """
+        # Check if all parameters are set
         if self.psf_fit_parameters.verify():
+            # Reset internals and GUI display
             self.pr_state.reset_state()
             self.middle_frame.pr_result_frame.reset()
             self.middle_frame.pr_mse_frame.reset()
@@ -567,6 +598,7 @@ class MainWindow(tk.Tk):
             self.zernike_results.initialize_polynom_list()
             self.right_frame.coefficient_frame.update_entries()
 
+            # Initialize the Phase Retrieval Thread and start it
             self.pr_thread = phaseretrieval_gui.PhaseRetrievalThreaded(self.psf_fit_parameters.psf_data_prepped,
                                                                        self.psf_fit_parameters.psf_parameter_dict(),
                                                                        self.pr_state,
@@ -575,21 +607,31 @@ class MainWindow(tk.Tk):
                                                                        )
             self.pr_thread.daemon = True
             self.pr_thread.start()
-            self.pr_button.configure(text="Stop Phase Retrieval", command=self.stop_pr)
+
+            # Reconfigure the Phase Retrieval Button to allow to stop the thread
+            self.left_frame.action_button_frame.pr_button.configure(text="Stop Phase Retrieval", command=self.stop_pr)
             self.pr_state.current_state.set("Phase retrieval running...")
+
+            # After 250 ms call the monitoring function
             self.after(250, self.check_pr_results)
 
     def check_pr_results(self):
-        """Checks every 250 ms, whether phaseretrieval_gui.PhaseRetrievalThreaded is still running. If the thread
-            is not alive(finished or has been aborted), update the GUI display, reset the PR_button to start the next
-            Phase Retrieval Algorithm. Calls itself, if the thread is still running and updates the GUI display every
-            five iterations.
         """
+        Checks every 250 ms, whether phaseretrieval_gui.PhaseRetrievalThreaded is still running. If the thread
+            is not alive(finished or has been aborted), update the GUI display, reset the PR_button to allow the start
+            of the next Phase Retrieval Algorithm.
+            Calls itself, if the thread is still running and updates the GUI display every five iterations.
+        """
+        # Check if the algorithm is still running
         if self.pr_thread.is_alive():
             self.left_frame.status_frame.update()
             self.after(250, self.check_pr_results)
-            if self.pr_state.current_iter.get() != 0 and self.pr_state.current_iter.get() % 5 == 0:
+
+            # Update the GUI every five iterations
+            if self.pr_state.current_iter.get() > 0 and self.pr_state.current_iter.get() % 5 == 0:
                 self.display_pr_results()
+
+        # If the thread has stopped, update the GUI display and reset the Phase Retrieval Button
         else:
             self.display_pr_results()
             self.display_zd_results()
@@ -599,10 +641,15 @@ class MainWindow(tk.Tk):
             self.pr_state.pr_finished.set(True)
 
     def display_pr_results(self):
+        """ Generates figures from the Phase Retrieval Algorithm Results and the differences in pupil function and mse.
+            Stores the figures in the image streams and updates the GUI display
+        """
+        # Create the Phase Retrieval result figure, store it as a byte stream and update GUI display
         result_figure, _ = self.phase_retrieval_results.plot(self.figure_dpi)
         self.image_streams.reset_image_stream(self.image_streams.pr_result_image_stream, result_figure)
         self.middle_frame.pr_result_frame.show_results(result_figure)
 
+        # Plot the errors in a figure, store it as a byte stream and update GUI display
         mse_figure, _ = self.phase_retrieval_results.plot_convergence_gui(self.figure_dpi,
                                                                           self.psf_fit_parameters.
                                                                           max_iterations.value.get())
@@ -610,9 +657,14 @@ class MainWindow(tk.Tk):
         self.middle_frame.pr_mse_frame.show_results(mse_figure)
 
     def display_zd_results(self):
+        """ Generate a figure from the Zernike Decomposition REsult, store the figure in the image streams and
+            update the GUI display
+        """
+        # Do the Zerniken Decomposition
         self.phase_retrieval_results.fit_to_zernikes(120)
 
-        zernike_figure, _ = self.phase_retrieval_results.zd_result.plot_named_coefs(self.figure_dpi)
+        # Create the Zernike Decomposition result figure, store it as a byte stream and update GUI display
+        zernike_figure, _ = self.phase_retrieval_results.zd_result.plot_named_coefs_gui(self.figure_dpi)
         self.image_streams.reset_image_stream(self.image_streams.zd_decomposition_image_stream, zernike_figure)
         self.right_frame.zernike_frame.show_results(zernike_figure)
 
