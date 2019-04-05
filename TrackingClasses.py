@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # TrackingClasses.py
 """
-Classes mainly storing and Parameters, current state and the results of phase retrieval algorithm.
+Classes mainly storing PSF parameters, and tracking current state and the results of the Phase Retrieval Algorithm.
 
 Copyright (c) 2019, Martin Stoeckl
 """
@@ -64,7 +64,7 @@ class PsfandFitParameters:
         self.mse_tolerance: double
             Iterations are aborted if minimal mse or mse difference between iterations is reached
         self.phase_tolerance: double
-            Tolerance level for the phase coefficient of the zernike polynoms (affects only display)
+            Tolerance level for the phase coefficient of the zernike polynomials (affects only display)
         """
     class PsfFitParameter:
         """Parameter entries for interaction with the GUI user.
@@ -161,6 +161,7 @@ class PsfandFitParameters:
         else:
             return True
 
+    @property
     def psf_parameter_dict(self):
         """Creates a dictionary containing the PSF parameters, using keys as needed by
            phaseretrieval_gui.PhaseRetrievalThreaded kwargs.
@@ -177,44 +178,56 @@ class PsfandFitParameters:
                     zres=self.z_res.value.get(),
                     )
 
+    @property
     def fit_parameter_dict(self):
         """Creates a dictionary containing the fit parameters, using keys as needed by
-                   phaseretrieval_gui.PhaseRetrievalThreaded kwargs.
+           phaseretrieval_gui.PhaseRetrievalThreaded kwargs.
 
-                           Returns
-                           ----------
-                           dict
-                               Dictionary, mapping kwargs to their parameters
+               Returns
+               ----------
+               dict
+                   Dictionary, mapping kwargs to their parameters
         """
         return dict(max_iters=self.max_iterations.value.get(),
                     pupil_tol=self.pupil_tolerance.value.get(),
                     mse_tol=self.mse_tolerance.value.get(),
                     )
 
+    @property
+    def voxel_aspect(self):
+        """The aspect ratio between the z stepping and the xy pixel size
+
+               Returns
+               ----------
+               double
+                   Aspect ratio z / xy
+        """
+        return self.z_res.value.get() / float(self.xy_res.value.get())
+
 
 class ZernikeDecomposition:
-    """Stores the results of the Zernike Polynom Decomposition.
+    """Stores the results of the Zernike Polynomial Decomposition.
 
         Attributes
         ----------
         self.zernike_names_dict : dict
-            A dict mapping polynom name to polynom order (Noll)
+            A dict mapping polynomial name to polynomial order (Noll)
         self.ordered_coeff_names : list
-            Sorted list of polynom names in raising order
-        self.zernike_polynoms : list
-            List of Zernike Polynom contributions (List of ZernikePolynom)
+            Sorted list of polynomial names in raising order
+        self.zernike_polynomials : list
+            List of Zernike Polynomial contributions (List of ZernikePolynomial)
         self.important_coeff_orders : tuple
-            Tuple of orders of Zernike Polynoms which are emphasised in GUI and reports
+            Tuple of orders of Zernike Polynomials which are emphasised in GUI and reports
     """
-    class ZernikePolynom:
-        """Zernike Polynom object, stores the results of the decomposition for each polynom.
+    class ZernikePolynomial:
+        """Zernike Polynomial object, stores the results of the decomposition for each polynomial.
 
           Attributes
           ----------
             self.order: int
-                Order of the polynom (Noll)
+                Order of the polynomial (Noll)
             self.name: string
-                Name of the polynom (Noll)
+                Name of the polynomial (Noll)
             self.value: double
                 Value of the phase coefficient (in units of wavelength)
             self.in_tolerance: bool
@@ -229,31 +242,32 @@ class ZernikeDecomposition:
     def __init__(self):
         self.zernike_names_dict = zernike.noll2name
         self.ordered_coeff_names = [self.zernike_names_dict[i + 1] for i in range(len(self.zernike_names_dict))]
-        self.zernike_polynoms = []
+        self.zernike_polynomials = []
         self.important_coeff_orders = (5, 6, 7, 8, 11)
-        self.initialize_polynom_list()
+        self.initialize_polynomial_list()
 
-    def initialize_polynom_list(self):
-        """Populate initial Zernike Polynom list and sort it in ascending order."""
-        self.zernike_polynoms = []
+    def initialize_polynomial_list(self):
+        """Populate initial Zernike Polynomial list and sort it in ascending order."""
+        self.zernike_polynomials = []
         for order, name in self.zernike_names_dict.items():
-            self.zernike_polynoms.append(self.ZernikePolynom(order, name, 0, None))
-        self.zernike_polynoms.sort(key=lambda p: p.order)
+            self.zernike_polynomials.append(self.ZernikePolynomial(order, name, 0, None))
+        self.zernike_polynomials.sort(key=lambda p: p.order)
 
     def decomposition_from_phase_retrieval(self, pr_results, phase_tolerance):
-        """ Run Zernike Decomposition on Phase Retrieval Results, update polynom list with phase coefficients
+        """ Get Zernike Decompostion results from Phase Retrieval Results,
+            update polynomialial list with phase coefficients
 
             Arguments
             ----------
             pr_results:  phaseretrieval_gui.PhaseRetrievalResult
                 Results from the phase retrieval algorithm
             phase_tolerance: double
-                Tolerance level for the phase coefficient of the zernike polynoms
+                Tolerance level for the phase coefficient of the zernike polynomials
         """
         ordered_phase_coefficients = pr_results.zd_result.pcoefs[:len(self.ordered_coeff_names)]
-        for polynom, phase_coefficient in zip(self.zernike_polynoms, ordered_phase_coefficients):
-            polynom.value = phase_coefficient
-            polynom.in_tolerance = (abs(phase_coefficient) < phase_tolerance)
+        for polynomial, phase_coefficient in zip(self.zernike_polynomials, ordered_phase_coefficients):
+            polynomial.value = phase_coefficient
+            polynomial.in_tolerance = (abs(phase_coefficient) < phase_tolerance)
 
 
 class PrState:
@@ -302,7 +316,7 @@ class ResultImageStreams:
         self.pr_fiterror_image_stream: BytesIO
             Current fitting errors (pupil function and mse difference) of the phase retrieval algorithm
         self.zd_decomposition_image_stream: BytesIO
-            Current results image from the Zernike Polynom Decomposition
+            Current results image from the Zernike Polynomial Decomposition
     """
     def __init__(self):
         self.psf_image_stream_xy = BytesIO()
@@ -391,11 +405,11 @@ class ZdResultWorkbook(xlsxwriter.Workbook):
         worksheet.write(10, 1, 'Noll Name', self.bold_format)
         worksheet.write(10, 2, 'Value', self.bold_format)
 
-        for polynom, row in zip(self.zernike_results.zernike_polynoms,
-                                range(len(self.zernike_results.zernike_polynoms))):
-            worksheet.write(row + 11, 0, polynom.order)
-            worksheet.write(row + 11, 1, polynom.name)
-            worksheet.write(row + 11, 2, polynom.value, self.short_number_format)
+        for polynomial, row in zip(self.zernike_results.zernike_polynomials,
+                                range(len(self.zernike_results.zernike_polynomials))):
+            worksheet.write(row + 11, 0, polynomial.order)
+            worksheet.write(row + 11, 1, polynomial.name)
+            worksheet.write(row + 11, 2, polynomial.value, self.short_number_format)
 
         self.close()
 
@@ -455,9 +469,10 @@ class PdfReport:
         c.drawString(100, 760, "PSF file: ")
         c.setFont('Helvetica', 10)
         c.drawString(155, 760, self.psf_filename)
-        c.setFont('Helvetica-Bold', 10)
+
+        c.setFont('Helvetica-Bold', 12)
         c.drawString(100, 730, "PSF previews")
-        c.setFont('Helvetica-Bold', 10)
+        c.setFont('Helvetica-Bold', 12)
         c.drawString(370, 730, "PSF & Fit parameters")
 
         # list PSF and PR parameters
@@ -502,31 +517,31 @@ class PdfReport:
             c.drawString(395, 355, condition_string)
             c.drawString(395, 340, condition_strings[1])
 
-        # list results of the Zernike Polynom Decomposition
+        # list results of the Zernike Polynomial Decomposition
         c.setFont('Helvetica-Bold', 12)
         c.drawString(100, 310, "Zernike decomposition results")
         c.drawImage(zd_res_image, 100, 60, width=240, height=240, mask=None)
         c.setFont('Helvetica-Bold', 10)
-        c.drawString(350, 285, "Zernike Polynom")
+        c.drawString(350, 285, "Zernike Polynomial")
         c.drawString(520, 285, "Value / λ")
 
         y_pos = 265
-        for polynom in self.zernike_results.zernike_polynoms:
+        for polynomial in self.zernike_results.zernike_polynomials:
             c.setFillColorRGB(0, 0, 0)
-            if polynom.order in self.zernike_results.important_coeff_orders:
+            if polynomial.order in self.zernike_results.important_coeff_orders:
                 font = 'Helvetica-Bold'
             else:
                 font = 'Helvetica'
             c.setFont(font, 10)
-            c.drawString(350, y_pos, polynom.name)
-            if polynom.in_tolerance:
+            c.drawString(350, y_pos, polynomial.name)
+            if polynomial.in_tolerance:
                 c.setFillColorRGB(0.22, 0.67, 0.15)
             else:
                 c.setFillColorRGB(0.9, 0.07, 0.07)
-            string_width = c.stringWidth("{:.2f}".format(polynom.value), font, 10)
+            string_width = c.stringWidth("{:.2f}".format(polynomial.value), font, 10)
 
             # string_width pos value: 19.46, neg value = 22.79, needed for right alignment
-            c.drawString(520 + 22.79 - string_width, y_pos, "{:.2f}".format(polynom.value))
+            c.drawString(520 + 22.79 - string_width, y_pos, "{:.2f}".format(polynomial.value))
             y_pos -= 17
 
         # print time at the end

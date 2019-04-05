@@ -6,7 +6,6 @@ Extracts the necessary image parameters and the image data from ome-tiffs or bio
 
 Copyright (c) 2019, Martin Stoeckl
 """
-
 import javabridge
 import bioformats
 import numpy as np
