@@ -642,7 +642,7 @@ class ZernikeFrame(tk.Frame):
                                           )
                 temp_label.grid(row=row, column=1, sticky=tk.E)
 
-                # If no results yet, in_toleranac is None --> don't display it
+                # If no results yet, in_tolerance is None --> don't display it
                 if polynomial.in_tolerance is not None:
                     if polynomial.in_tolerance:
                         temp_label = tk.Label(self,
@@ -696,7 +696,7 @@ class ZernikeFrame(tk.Frame):
             self.save_zernike_img_button.grid(row=1, column=0, padx=5, pady=5, )
 
             self.save_zernike_values_button = tk.Button(self,
-                                                        text="Zernike Coeff. as .csv",
+                                                        text="Save fit results as .xlsx",
                                                         command=self.save_zd_values,
                                                         )
             self.save_zernike_values_button.grid(row=0, column=1, padx=5, pady=5, )
@@ -753,15 +753,17 @@ class ZernikeFrame(tk.Frame):
                 messagebox.showwarning("Invalid File Path", str(pop_up_alert))
 
         def save_zd_values(self):
-            """ Save the Results of the Zernike Decomposition and the parameters for the PSF and the PR Fit to a .xlsx"""
+            """ Save the Results of the Zernike Decomposition and the parameters
+                for the PSF and the PR Fit to a .xlsx file.
+            """
             xlsx_path = os.path.join(self.winfo_toplevel().result_directory.get(),
                                      os.path.splitext(self.winfo_toplevel().psf_filename)[0] + '_zd_results.xlsx')
             try:
                 TrackingClasses.ZdResultWorkbook(xlsx_path,
                                                  self.winfo_toplevel().psf_file.get(),
-                                                 self.winfo_toplevel().psf_fit_parameters,
                                                  self.winfo_toplevel().zernike_results,
-                                                 self.winfo_toplevel().pr_state
+                                                 self.winfo_toplevel().pr_state,
+                                                 psf_fit_parameters=self.winfo_toplevel().psf_fit_parameters,
                                                  )
             except Exception as pop_up_alert:
                 messagebox.showwarning("Saving results as .xlsx failed", str(pop_up_alert))

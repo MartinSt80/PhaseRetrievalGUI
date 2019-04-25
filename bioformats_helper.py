@@ -3,6 +3,7 @@
 # bioformats_helper.py
 """
 Extracts the necessary image parameters and the image data from ome-tiffs or bioformats supported image formats.
+The javabridge JVM running bioformatshas to be started in the script before
 
 Copyright (c) 2019, Martin Stoeckl
 """
@@ -17,7 +18,7 @@ import xml.etree.ElementTree as ET
 class PsfImageDataAndParameters:
 
     # map refractive indices to immersion keywords
-    immersion_to_ri = {'oil': 1.518,
+    __immersion_to_ri = {'oil': 1.518,
                        'glycerol': 1.472,
                        'water': 1.333,
                        'air': 1.,
@@ -158,7 +159,7 @@ class PsfImageDataAndParameters:
                                             immersion = sub_element.get('Immersion')
                                             if immersion is not None:
                                                 try:
-                                                    self.refractive_index = self.immersion_to_ri[immersion.lower()]
+                                                    self.refractive_index = self.__immersion_to_ri[immersion.lower()]
                                                 except KeyError:
                                                     pass
         # store image data in a numpy array

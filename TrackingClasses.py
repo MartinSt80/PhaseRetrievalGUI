@@ -22,6 +22,28 @@ from pyOTF import utils
 
 import bioformats_helper
 
+class NamedParameters:
+    """ Stores the relation between the kwarg needed for phaseretrieval_gui.PhaseRetrievalThreaded and the
+        displayed string
+    """
+    __key_to_name = dict(
+                        wl='Emission wavelength',
+                        na='Numerical aperture',
+                        ni='Refractive index',
+                        res='xy-Resolution',
+                        zres='z-Resolution',
+                        max_iters='Maximum iterations',
+                        pupil_tol='Minimal pupil function difference',
+                        mse_tol='Minimal relative MSE difference',
+                        phase_tol='Tolerable phase deviation',
+                        )
+
+    def get_name(self, key):
+        try:
+            return self.__key_to_name[key]
+        except KeyError:
+            return ''
+
 
 class PsfandFitParameters:
     """Stores and tracks the psf and fit parameters, retrieved from the PSF file or entered by the user.
@@ -84,26 +106,57 @@ class PsfandFitParameters:
             self.unit = unit
 
     def __init__(self):
-        self.em_wavelength = self.PsfFitParameter(name='Emission wavelength', value=tk.IntVar(), unit='nm')
-        self.num_aperture = self.PsfFitParameter(name='Numerical aperture', value=tk.DoubleVar(), unit='')
-        self.refractive_index = self.PsfFitParameter(name='Refractive index', value=tk.DoubleVar(), unit='')
-        self.xy_res = self.PsfFitParameter(name='xy-Resolution', value=tk.IntVar(), unit='nm')
-        self.z_res = self.PsfFitParameter(name='z-Resolution', value=tk.IntVar(), unit='nm')
+        self.parameter_names = NamedParameters()
+        self.em_wavelength = self.PsfFitParameter(name=self.parameter_names.get_name('wl'),
+                                                  value=tk.IntVar(),
+                                                  unit='nm'
+                                                  )
+        self.num_aperture = self.PsfFitParameter(name=self.parameter_names.get_name('na'),
+                                                 value=tk.DoubleVar(),
+                                                 unit=''
+                                                 )
+        self.refractive_index = self.PsfFitParameter(name=self.parameter_names.get_name('ni'),
+                                                     value=tk.DoubleVar(),
+                                                     unit=''
+                                                     )
+        self.xy_res = self.PsfFitParameter(name=self.parameter_names.get_name('res'),
+                                           value=tk.IntVar(),
+                                           unit='nm'
+                                           )
+        self.z_res = self.PsfFitParameter(name=self.parameter_names.get_name('zres'),
+                                          value=tk.IntVar(),
+                                          unit='nm'
+                                          )
 
         self.psf_data = None
         self.psf_data_prepped = None
         self.xy_size = None
         self.z_size = None
 
-        self.max_iterations = self.PsfFitParameter(name='Maximum iterations', value=tk.IntVar(name='MAX_ITER'), unit='')
+        self.max_iterations = self.PsfFitParameter(name=self.parameter_names.get_name('max_iters'),
+                                                   value=tk.IntVar(name='MAX_ITER'),
+                                                   unit=''
+                                                   )
         self.max_iterations.value.set(100)
-        self.pupil_tolerance = self.PsfFitParameter(name='Minimal pupil function difference', value=tk.DoubleVar(),
-                                                    unit='')
+
+        self.pupil_tolerance = self.PsfFitParameter(name=self.parameter_names.get_name('pupil_tol'),
+                                                    value=tk.DoubleVar(),
+                                                    unit=''
+                                                    )
         self.pupil_tolerance.value.set(float(1e-8))
-        self.mse_tolerance = self.PsfFitParameter(name='Minimal relative MSE difference', value=tk.DoubleVar(), unit='')
+
+        self.mse_tolerance = self.PsfFitParameter(name=self.parameter_names.get_name('mse_tol'),
+                                                  value=tk.DoubleVar(),
+                                                  unit=''
+                                                  )
         self.mse_tolerance.value.set(float(1e-6))
-        self.phase_tolerance = self.PsfFitParameter(name='Tolerable phase deviation', value=tk.DoubleVar(), unit='λ')
+
+        self.phase_tolerance = self.PsfFitParameter(name=self.parameter_names.get_name('phase_tol'),
+                                                    value=tk.DoubleVar(),
+                                                    unit='λ'
+                                                    )
         self.phase_tolerance.value.set(0.5)
+
         self.is_initiated = False
 
     def read_data_and_parameters(self, psf_file_path):
@@ -118,9 +171,9 @@ class PsfandFitParameters:
         try:
             psf_info = bioformats_helper.PsfImageDataAndParameters(psf_file_path)
         except AssertionError as pop_up_alert:
-            messagebox.showwarning(str(pop_up_alert), title='PSF file parameters or data not read correctly')
+            messagebox.showwarning('PSF file parameters or data not read correctly', str(pop_up_alert))
         except Exception as pop_up_alert:
-            messagebox.showwarning(str(pop_up_alert), title='Invalid PSF file path')
+            messagebox.showwarning('Invalid PSF file path', str(pop_up_alert))
         else:
             self.num_aperture.value.set(psf_info.numerical_aperture)
             self.refractive_index.value.set(psf_info.refractive_index)
@@ -156,7 +209,7 @@ class PsfandFitParameters:
             assert self.psf_data.shape == (self.z_size, self.xy_size, self.xy_size), \
                 'PSF data array is not shaped correctly.'
         except AssertionError as pop_up_alert:
-            messagebox.showwarning(str(pop_up_alert), title='Invalid PSF parameters')
+            messagebox.showwarning('Invalid PSF parameters', str(pop_up_alert))
             return False
         else:
             return True
@@ -348,71 +401,86 @@ class ZdResultWorkbook(xlsxwriter.Workbook):
             Full path to store the .xlsx-file
         self.psf_path: string
             Full path to the PSF-file
-        self.psf_parameters: PsfandFitParameters
-            Parameters of the measured PSF and the Phase Retrieval Algorithm
         self.zernike_results: ZernikeDecomposition
             Results of the Zernike Decomposition
         self.pr_state: PrState
             State of the Phase Retrieval Algorithm
-
+        self.psf_fit_parameters: PsfandFitParameters
+            Parameters for the PSF and the Phase Retrieval Algorithm
+        self.psf_param_dict: dict
+            Parameters of the measured PSF (keys are as needed for phaseretrieval_gui.PhaseRetrievalThreaded)
+        self.fit_param_dict: dict
+            Parameters of the Phase Retrieval Algorithm
+            (keys are as needed for phaseretrieval_gui.PhaseRetrievalThreaded)
     """
-    def __init__(self, save_path, psf_path, psf_parameters, zernike_results, pr_state):
+    def __init__(self, save_path, psf_path, zernike_results, pr_state, psf_fit_parameters=None,
+                 psf_param_dict=None, fit_param_dict=None):
 
         super(ZdResultWorkbook, self).__init__(save_path)
 
         self.psf_path = psf_path
-        self.psf_parameters = psf_parameters
         self.zernike_results = zernike_results
         self.pr_state = pr_state
+        self.psf_fit_parameters = psf_fit_parameters
+        self.psf_param_dict = psf_param_dict
+        self.fit_param_dict = fit_param_dict
+
+        self.parameter_names = NamedParameters()
 
         self.bold_format = self.add_format({'bold': True})
         self.short_number_format = self.add_format()
         self.short_number_format.set_num_format('0.00')
+
+        if self.psf_fit_parameters is not None:
+            self.psf_param_dict = self.psf_fit_parameters.psf_parameter_dict
+
+            self.fit_param_dict = self.psf_fit_parameters.fit_parameter_dict
+
+        self.worksheet = self.add_worksheet('Zernike decomposition')
         self.add_entries()
+        self.close()
 
     def add_entries(self):
-        worksheet = self.add_worksheet('Zernike decomposition')
-        worksheet.write(0, 0, self.psf_path, self.bold_format)
+        def add_parameter_entries(start_row, start_col, param_dict):
+            parameters = param_dict.items()
+            for (param_key, param_value), current_row in zip(parameters,
+                                                             range(start_row, start_row + len(param_dict))
+                                                             ):
+                if param_key in ('wl', 'res', 'zres'):
+                    unit = 'nm'
+                elif param_key == 'phase_tol':
+                    unit = 'λ'
+                else:
+                    unit = ''
+                if unit:
+                    self.worksheet.write(current_row, start_col, self.parameter_names.get_name(param_key) + ' in ' + unit)
+                else:
+                    self.worksheet.write(current_row, start_col, self.parameter_names.get_name(param_key))
+                self.worksheet.write(current_row, start_col + 1, param_value)
 
-        worksheet.write(2, 0, 'PSF Parameters', self.bold_format)
-        worksheet.write(3, 0, self.psf_parameters.em_wavelength.name + ' in nm')
-        worksheet.write(3, 1, self.psf_parameters.em_wavelength.value.get())
-        worksheet.write(4, 0, self.psf_parameters.num_aperture.name)
-        worksheet.write(4, 1, self.psf_parameters.num_aperture.value.get())
-        worksheet.write(5, 0, self.psf_parameters.refractive_index.name)
-        worksheet.write(5, 1, self.psf_parameters.refractive_index.value.get())
-        worksheet.write(6, 0, self.psf_parameters.xy_res.name + ' in nm')
-        worksheet.write(6, 1, self.psf_parameters.xy_res.value.get())
-        worksheet.write(7, 0, self.psf_parameters.z_res.name + ' in nm')
-        worksheet.write(7, 1, self.psf_parameters.z_res.value.get())
+        self.worksheet.write(0, 0, self.psf_path, self.bold_format)
+        self.worksheet.write(2, 0, 'PSF Parameters', self.bold_format)
+        add_parameter_entries(3, 0, self.psf_param_dict)
 
-        worksheet.write(2, 2, 'Phase Retrieval Parameters', self.bold_format)
-        worksheet.write(3, 2, self.psf_parameters.max_iterations.name)
-        worksheet.write(3, 3, self.psf_parameters.max_iterations.value.get())
-        worksheet.write(4, 2, self.psf_parameters.pupil_tolerance.name)
-        worksheet.write(4, 3, self.psf_parameters.pupil_tolerance.value.get())
-        worksheet.write(5, 2, self.psf_parameters.mse_tolerance.name)
-        worksheet.write(5, 3, self.psf_parameters.mse_tolerance.value.get())
+        self.worksheet.write(2, 2, 'Phase Retrieval Parameters', self.bold_format)
+        add_parameter_entries(3, 2, self.fit_param_dict)
 
         current_iteration_string = "Phase retrieval stopped after iteration {} out of {}.".format(
-            self.pr_state.current_iter.get(), self.psf_parameters.max_iterations.value.get())
-        worksheet.write(6, 2, current_iteration_string)
+            self.pr_state.current_iter.get(), self.fit_param_dict['max_iters'])
+        self.worksheet.write(6, 2, current_iteration_string)
         pr_state_string = self.pr_state.current_state.get().replace("\n", " ")
-        worksheet.write(7, 2, pr_state_string, self.bold_format)
+        self.worksheet.write(7, 2, pr_state_string, self.bold_format)
 
-        worksheet.write(9, 0, 'Zernike Decomposition Results', self.bold_format)
-        worksheet.write(10, 0, 'Noll Order', self.bold_format)
-        worksheet.write(10, 1, 'Noll Name', self.bold_format)
-        worksheet.write(10, 2, 'Value', self.bold_format)
+        self.worksheet.write(9, 0, 'Zernike Decomposition Results', self.bold_format)
+        self.worksheet.write(10, 0, 'Noll Order', self.bold_format)
+        self.worksheet.write(10, 1, 'Noll Name', self.bold_format)
+        self.worksheet.write(10, 2, 'Value', self.bold_format)
 
         for polynomial, row in zip(self.zernike_results.zernike_polynomials,
                                 range(len(self.zernike_results.zernike_polynomials))):
-            worksheet.write(row + 11, 0, polynomial.order)
-            worksheet.write(row + 11, 1, polynomial.name)
-            worksheet.write(row + 11, 2, polynomial.value, self.short_number_format)
-
-        self.close()
-
+            self.worksheet.write(row + 11, 0, polynomial.order)
+            self.worksheet.write(row + 11, 1, polynomial.name)
+            self.worksheet.write(row + 11, 2, polynomial.value, self.short_number_format)
 
 class PdfReport:
     """Creates a .xlsx-file to store the PSF and Fit parameters and the Zernike decomposition results
