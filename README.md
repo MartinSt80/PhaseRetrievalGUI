@@ -4,5 +4,5 @@ The graphical user interface allows to easily load PSF images from bioformats co
 In addition the command line tool (retrieve_phase_from_image.py) has been modified to accept bioformat compatible files and PSF or Fit parameters as arguments, creates .xlsx reports and tracks the progress.
 
 # Needed dependencies
-The modified dphutils and pyOTF repositories (forked from https://github.com/david-hoffman/) are needed to run the GUI and the command line tool.
+The modified [dphutils](https://github.com/MartinSt80/dphutils) and [pyOTF](https://github.com/MartinSt80/pyOTF) repositories (forked from https://github.com/david-hoffman/) are needed to run the GUI and the command line tool.
 
